@@ -7,6 +7,8 @@
 #include <fstream>
 #include <sstream>
 #include <iostream>
+#include <vector>
+#include <algorithm>
 #include <boost/format.hpp>
 
 #include <gtsam/geometry/Pose3.h>
@@ -57,15 +59,16 @@ public:
 
     std::vector<std::string> graph_lines;
     std::string line;
-    while (std::getline(ifs, line))
-      if (!line.empty() && line[0] == 'v') graph_lines.push_back(line);
+    while (std::getline(ifs, line)) {
+      if (!line.empty()) graph_lines.push_back(line);
+    }
 
     num_frames = graph_lines.size();
     if (num_frames == 0) {
-      std::cerr << "error: graph.txt has no vertex lines" << std::endl;
+      std::cerr << "error: graph.txt has no lines" << std::endl;
       std::exit(1);
     }
-    std::cout << "[INFO] found " << num_frames << " frames\n";
+    std::cout << "[INFO] found " << num_frames << " frames" << std::endl;
 
 #ifdef GTSAM_POINTS_USE_CUDA
     std::cout << "Register GPU linearization hook" << std::endl;
@@ -77,44 +80,45 @@ public:
     frames.resize(num_frames);
     voxelmaps.resize(num_frames);
     voxelmaps_gpu.resize(num_frames);
+    ids.resize(num_frames);
 
     /* -------- load every frame --------------------------------------------- */
     for (size_t i = 0; i < num_frames; ++i) {
-      /* parse pose ---------------------------------------------------------- */
+      /* parse id and pose -------------------------------------------------- */
       std::istringstream iss(graph_lines[i]);
-      std::string tok;            // v<i>
+      std::string id;            // e.g. CWLPH_2
       gtsam::Vector3 t;
       gtsam::Quaternion q;
-      iss >> tok >> t.x() >> t.y() >> t.z() >> q.x() >> q.y() >> q.z() >> q.w();
+      iss >> id >> t.x() >> t.y() >> t.z() >> q.x() >> q.y() >> q.z() >> q.w();
+
+      ids[i] = id;
 
       gtsam::Pose3 P(gtsam::Rot3(q), t);
       poses.insert(i, P);
       poses_gt.insert(i, P);
 
       /* points file path ---------------------------------------------------- */
-      std::string points_path =
-          (boost::format("%s/%06d/points.bin") % data_path % i).str();
+      std::string points_path = data_path + "/" + id + "/" + id + ".bin";
       std::ifstream test(points_path, std::ios::binary);
-      if (!test) {                    // fallback: flat <root>/000000.bin
-        points_path =
-            (boost::format("%s/%06d.bin") % data_path % i).str();
+      if (!test) {
+        points_path = data_path + "/" + id + "/points.bin";
+        test.open(points_path, std::ios::binary);
+      }
+      if (!test) {
+        std::cerr << "error: failed to read points for " << id << std::endl;
+        std::exit(1);
       }
 
       std::cout << "loading " << points_path << std::endl;
       auto pts_f = gtsam_points::read_points(points_path);
-      std::cout << "  -> loaded " << pts_f.size() << " points\n";
-      if (pts_f.size()) std::cout << "     first point: " << pts_f[0].transpose() << '\n';
-
-      if (pts_f.empty()) {
-        std::cerr << "error: failed to read " << points_path << std::endl;
-        std::exit(1);
-      }
+      std::cout << "  -> loaded " << pts_f.size() << " points" << std::endl;
+      if (!pts_f.empty())
+        std::cout << "     first point: " << pts_f[0].transpose() << std::endl;
 
       std::vector<Eigen::Vector4d> pts_d(pts_f.size());
       std::transform(pts_f.begin(), pts_f.end(), pts_d.begin(),
                      [](const Eigen::Vector3f& p) {
-                       return (Eigen::Vector4d() << p.cast<double>(), 1.0)
-                           .finished();
+                       return (Eigen::Vector4d() << p.cast<double>(), 1.0).finished();
                      });
 
       auto covs = gtsam_points::estimate_covariances(pts_d);
@@ -141,7 +145,7 @@ public:
 #endif
 
       viewer->update_drawable(
-          "frame_" + std::to_string(i),
+          "frame_" + id,
           std::make_shared<glk::PointCloudBuffer>(frame->points, frame->size()),
           guik::Rainbow());
     }
@@ -167,8 +171,7 @@ public:
       ImGui::DragFloat("noise_scale", &pose_noise_scale, 0.01f, 0.0f);
       if (ImGui::Button("add noise")) {
         for (size_t i = 1; i < num_frames; ++i) {
-          gtsam::Pose3 n =
-              gtsam::Pose3::Expmap(gtsam::Vector6::Random() * pose_noise_scale);
+          gtsam::Pose3 n = gtsam::Pose3::Expmap(gtsam::Vector6::Random() * pose_noise_scale);
           poses.update<gtsam::Pose3>(i, poses_gt.at<gtsam::Pose3>(i) * n);
         }
         update_viewer(poses);
@@ -208,7 +211,7 @@ private:
       const auto& P = vals.at<gtsam::Pose3>(i);
       const auto& t = P.translation();
       gtsam::Quaternion q = P.rotation().toQuaternion();
-      ofs << 'v' << i << ' '
+      ofs << ids[i] << ' '
           << t.x() << ' ' << t.y() << ' ' << t.z() << ' '
           << q.x() << ' ' << q.y() << ' ' << q.z() << ' ' << q.w() << '\n';
     }
@@ -222,10 +225,13 @@ private:
       std::vector<Eigen::Vector3f> lines;
       for (size_t i = 0; i < num_frames; ++i) {
         Eigen::Isometry3f pose(vals.at<gtsam::Pose3>(i).matrix().cast<float>());
-        vwr->find_drawable("frame_" + std::to_string(i))
+
+        const std::string& id = ids[i];
+
+        vwr->find_drawable("frame_" + id)
             .first->add("model_matrix", pose);
         vwr->update_drawable(
-            "coord_" + std::to_string(i),
+            "coord_" + id,
             glk::Primitives::coordinate_system(),
             guik::VertexColor(pose * Eigen::UniformScaling<float>(5.0f)));
 
@@ -310,16 +316,19 @@ private:
                                 voxelmaps_gpu[i], frames[j]));
     }
 
-    /* ---------- LM --------------------------------------------------------- */
+      /* ---------- LM --------------------------------------------------------- */
     if (optimizer_types[optimizer_type] == std::string("LM")) {
       gtsam_points::LevenbergMarquardtExtParams prm;
+      prm.maxIterations = 300; 
       prm.callback = [this](auto& st, const gtsam::Values& v) {
         guik::LightViewer::instance()->append_text(st.to_string());
         update_viewer(v);
       };
       gtsam_points::LevenbergMarquardtOptimizerExt opt(graph, poses, prm);
       opt.optimize();
-      save_values(opt.values(), "data/optimized_graph.txt");
+
+      //  ✨ write to <root>/optimized.txt instead of CWD
+      save_values(opt.values(), data_path + "/optimized.txt");
     }
 
     /* ---------- ISAM2 ------------------------------------------------------ */
@@ -335,8 +344,10 @@ private:
         isam2.update();
         update_viewer(isam2.calculateEstimate());
       }
-      save_values(isam2.calculateEstimate(), "optimized_graph.txt");
-    }
+
+      //  ✨ write to <root>/optimized.txt instead of CWD
+      save_values(isam2.calculateEstimate(), data_path + "/optimized.txt");
+    } 
   }
 
   /* ----------------- data --------------------------------------------------- */
@@ -358,11 +369,12 @@ private:
   gtsam::Values poses, poses_gt;
   std::vector<gtsam_points::PointCloud::Ptr>       frames;
   std::vector<gtsam_points::GaussianVoxelMap::Ptr> voxelmaps, voxelmaps_gpu;
+  std::vector<std::string> ids;  // frame identifiers (e.g., CWLPH_3)
 };
 
 /* =================================================================== */
 int main(int argc, char** argv) {
-  std::string root = (argc > 1) ? argv[1] : "data/kitti_07_dump";
+  std::string root = (argc > 1) ? argv[1] : "data/preprocessed_dir";
   MatchingCostFactorDemo demo(root);
   guik::LightViewer::instance()->spin();
   return 0;

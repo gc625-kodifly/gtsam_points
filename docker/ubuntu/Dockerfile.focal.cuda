@@ -21,9 +21,9 @@ RUN git checkout 1fd5ce1
 WORKDIR /root/eigen/build
 RUN cmake .. && make install
 
-COPY . /root/gtsam_points
+# COPY . /root/gtsam_points
 WORKDIR /root/gtsam_points/build
-RUN rm -rf *
+# RUN rm -rf *
 RUN cmake .. \
   -DBUILD_DEMO=ON \
   -DBUILD_TESTS=ON \
@@ -33,7 +33,6 @@ RUN cmake .. \
   -DBUILD_WITH_CUDA_MULTIARCH=ON \
   -DCMAKE_BUILD_TYPE=Release && \
   make -j$(nproc) && \
-  make install && \
-  rm -rf /root/gtsam_points/build
+  make install 
 
 CMD ["bash"]

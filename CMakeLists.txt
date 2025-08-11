@@ -33,7 +33,13 @@ find_package(Boost REQUIRED COMPONENTS graph filesystem)
 find_package(GTSAM REQUIRED)
 find_package(GTSAM_UNSTABLE REQUIRED)
 find_package(Eigen3 REQUIRED)
-
+find_package(LASlib CONFIG QUIET)  # provides target LASlib::LASlib
+if(LASlib_FOUND)
+  find_package(ZLIB REQUIRED)
+  message(STATUS "LASlib found; LAS/LAZ support enabled")
+else()
+  message(STATUS "LASlib not found; LAS/LAZ support disabled")
+endif()
 if(BUILD_WITH_TBB)
   find_package(TBB REQUIRED)
   set(GTSAM_POINTS_USE_TBB 1)
@@ -269,16 +275,66 @@ if(BUILD_WITH_CUDA)
   )
 endif()
 
-#Demo
+# Demo
 if(BUILD_DEMO)
   find_package(iridescence REQUIRED)
+
+  # ---- LASlib (LAStools) optional ----
+  # Works whether the package exports LASlib::LASlib or plain LASlib.
+  find_package(LASlib QUIET)
+  if(LASlib_FOUND)
+    find_package(ZLIB REQUIRED)
+    if(TARGET LASlib::LASlib)
+      set(LASLIB_TGT LASlib::LASlib)
+    elseif(TARGET LASlib)
+      set(LASLIB_TGT LASlib)
+    else()
+      find_library(LASLIB_TGT NAMES LASlib PATHS /usr/local/lib /usr/lib)
+    endif()
+    message(STATUS "LASlib found; enabling LAS/LAZ support for CLI demo")
+  else()
+    message(STATUS "LASlib not found; LAS/LAZ support disabled")
+  endif()
+
+  # ---- small_gicp optional ----
+  # Header-only, but you installed the helper lib; prefer the imported target.
+  find_package(small_gicp CONFIG QUIET)
+  if(small_gicp_FOUND)
+    if(TARGET small_gicp::small_gicp)
+      set(SMALL_GICP_TGT small_gicp::small_gicp)
+    elseif(TARGET small_gicp)
+      set(SMALL_GICP_TGT small_gicp)
+    else()
+      find_library(SMALL_GICP_TGT NAMES small_gicp PATHS /usr/local/lib /usr/lib)
+    endif()
+    message(STATUS "small_gicp found; enabling preprocessing helpers for CLI demo")
+  else()
+    message(STATUS "small_gicp not found; preprocessing helpers disabled")
+  endif()
 
   file(GLOB demo_sources "src/demo/*.cpp")
   foreach(demo_src IN LISTS demo_sources)
     get_filename_component(demo_name ${demo_src} NAME_WE)
 
     add_executable(${demo_name} ${demo_src})
-    target_link_libraries(${demo_name} gtsam_points Iridescence::Iridescence)
+    target_link_libraries(${demo_name}
+      PRIVATE
+        gtsam_points
+        Iridescence::Iridescence
+    )
+
+      if(LASLIB_TGT)
+        target_link_libraries(${demo_name} PRIVATE ${LASLIB_TGT} ZLIB::ZLIB)
+        target_compile_definitions(${demo_name} PRIVATE HAVE_LASLIB=1)
+      endif()
+      if(SMALL_GICP_TGT)
+        target_link_libraries(${demo_name} PRIVATE ${SMALL_GICP_TGT})
+        target_compile_definitions(${demo_name} PRIVATE HAVE_SMALL_GICP=1)
+      endif()
+      # Make sure OpenMP flags apply to this TU (needed for small_gicp’s OMP code)
+      if(TARGET OpenMP::OpenMP_CXX)
+        target_link_libraries(${demo_name} PRIVATE OpenMP::OpenMP_CXX)
+      endif()
   endforeach()
 endif()
 
