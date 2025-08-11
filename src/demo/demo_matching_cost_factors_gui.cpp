@@ -1,5 +1,6 @@
+
 /* ──────────────────────────────────────────────────────────────────── *\
- *  MatchingCostFactorDemo (GUI + auto-run + parallel loading)         *
+ *  MatchingCostFactorDemo (GUI + auto-run + parallel load + safe skip)
 \* ──────────────────────────────────────────────────────────────────── */
 
 #include <chrono>
@@ -58,10 +59,10 @@ struct Args {
   double      downsample_resolution = 0.25;
   int         downsample_threads    = 4;
   std::string optimizer_type = "LM";
-  std::string factor_type    = "GICP";
+  std::string factor_type    = "VGICP";
   bool        headless       = false;
   int         load_threads   = 0;
-  std::string graph_path;               // NEW: optional path to graph.txt
+  std::string graph_path;               // optional path to graph.txt
 };
 
 static inline std::string lower_copy(std::string s) {
@@ -79,7 +80,7 @@ static bool parse_cli(int argc, char** argv, Args& out) {
               << " [--optimizer_type LM|ISAM2]"
               << " [--factor_type ICP|ICP_PLANE|GICP|VGICP|VGICP_GPU]"
               << " [--load_threads N]"
-              << " [--graph /abs/or/rel/path/to/graph.txt]"   // << added
+              << " [--graph /path/to/graph.txt]"
               << " [--headless]\n";
     return false;
   }
@@ -99,7 +100,7 @@ static bool parse_cli(int argc, char** argv, Args& out) {
       else if (key == "optimizer_type") out.optimizer_type = val;
       else if (key == "factor_type") out.factor_type = val;
       else if (key == "load_threads") out.load_threads = std::stoi(val);
-      else if (key == "graph") out.graph_path = val;                   // << added
+      else if (key == "graph") out.graph_path = val;
       else std::cerr << "[WARN] unknown flag --" << key << '\n';
     }
   }
@@ -115,19 +116,22 @@ static bool parse_cli(int argc, char** argv, Args& out) {
                                                   : (int)std::thread::hardware_concurrency();
     if (out.load_threads <= 0) out.load_threads = 4;
   }
-
-  // Default graph path if not supplied
-  if (out.graph_path.empty()) out.graph_path = out.root + "/graph.txt";  // << added
+  if (out.graph_path.empty()) out.graph_path = out.root + "/graph.txt";
   return true;
 }
 
 /* ---------- IO helpers ---------------------------------------------------- */
+static bool file_exists(const std::string& path) {
+  std::ifstream f(path.c_str(), std::ios::in);
+  return (bool)f;
+}
+
 static std::vector<Eigen::Vector3f> read_points_from_las(const std::string& path) {
   LASreadOpener opener;
   opener.set_file_name(path.c_str());
   LASreader* reader = opener.open();
   if (!reader) {
-    std::cerr << "error: failed to open " << path << " with LASlib\n";
+    std::cerr << "[WARN] LASlib failed to open " << path << '\n';
     return {};
   }
   uint64_t n = (reader->header.version_minor >= 4 && reader->header.extended_number_of_point_records)
@@ -184,8 +188,8 @@ public:
     /* -------- read graph (sequential) ------------------------------------- */
     std::ifstream ifs(args.graph_path);
     if (!ifs) {
-    std::cerr << "error: failed to open " << args.graph_path << std::endl;
-    std::exit(1);
+      std::cerr << "error: failed to open " << args.graph_path << std::endl;
+      std::exit(1);
     }
     std::cout << "[INFO] using graph: " << args.graph_path << std::endl;
 
@@ -217,6 +221,7 @@ public:
     voxelmaps_gpu.resize(num_frames);
     ids.resize(num_frames);
     init_poses.resize(num_frames);
+    active.assign(num_frames, 0);
 
     // Fill ids & initial poses (sequential)
     for (size_t i = 0; i < num_frames; ++i) {
@@ -230,7 +235,11 @@ public:
     auto load_one = [&](size_t i) {
       const std::string& id = ids[i];
       const std::string points_path = compose_points_path(args, id);
-
+      if (!file_exists(points_path)) {
+        std::lock_guard<std::mutex> lk(print_mu);
+        std::cerr << "[WARN] missing file: " << points_path << " — skipping\n";
+        return; // leave frames[i] == nullptr
+      }
       { std::lock_guard<std::mutex> lk(print_mu);
         std::cout << "loading " << points_path << std::endl;
       }
@@ -241,15 +250,14 @@ public:
       } else {
         pts_f = gtsam_points::read_points(points_path);
       }
-
+      if (pts_f.empty()) {
+        std::lock_guard<std::mutex> lk(print_mu);
+        std::cerr << "[WARN] unable to load or zero points: " << points_path << " — skipping\n";
+        return; // keep frames[i] == nullptr
+      }
       {
         std::lock_guard<std::mutex> lk(print_mu);
         std::cout << "  -> loaded " << pts_f.size() << " points" << std::endl;
-      }
-      if (pts_f.empty()) {
-        std::lock_guard<std::mutex> lk(print_mu);
-        std::cerr << "error: failed to read " << points_path << std::endl;
-        return; // leave this index empty; optimization will likely fail
       }
 
       // Downsample (optional)
@@ -282,16 +290,16 @@ public:
       vmap_gpu->insert(*frame);
       voxelmaps_gpu[i] = vmap_gpu;
 #endif
+
+      active[i] = 1; // mark as successfully loaded
     };
 
-    // OpenMP parallel for (if available)
 #if defined(_OPENMP)
     #pragma omp parallel for num_threads(args.load_threads) schedule(dynamic)
     for (int i = 0; i < static_cast<int>(num_frames); ++i) {
       load_one(static_cast<size_t>(i));
     }
 #else
-    // Fallback: tiny thread pool splitting the range
     {
       int T = std::max(1, args.load_threads);
       std::vector<std::thread> workers;
@@ -309,8 +317,22 @@ public:
     }
 #endif
 
-    // Insert poses into gtsam::Values (sequential; Values is not thread-safe)
+    // Count active and pick a root for the prior
+    size_t active_count = std::count(active.begin(), active.end(), (char)1);
+    if (active_count == 0) {
+      std::cerr << "[ERROR] No frames loaded successfully. Nothing to optimize.\n";
+      return; // or std::exit(1);
+    }
+    std::cout << "[INFO] active frames: " << active_count << " / " << num_frames << std::endl;
+
+    root_key_ = std::numeric_limits<size_t>::max();
     for (size_t i = 0; i < num_frames; ++i) {
+      if (active[i]) { root_key_ = i; break; }
+    }
+
+    // Insert ONLY active poses into Values (Values is not thread-safe)
+    for (size_t i = 0; i < num_frames; ++i) {
+      if (!active[i]) continue;
       poses.insert(i, init_poses[i]);
       poses_gt.insert(i, init_poses[i]);
     }
@@ -408,6 +430,7 @@ private:
     std::ofstream ofs(path);
     if (!ofs) { std::cerr << "cannot open " << path << '\n'; return; }
     for (size_t i = 0; i < num_frames; ++i) {
+      if (!vals.exists(i)) continue;  // guard missing keys
       const auto& P = vals.at<gtsam::Pose3>(i);
       const auto& t = P.translation();
       gtsam::Quaternion q = P.rotation().toQuaternion();
@@ -424,6 +447,8 @@ private:
       auto vwr = guik::LightViewer::instance();
       std::vector<Eigen::Vector3f> lines;
       for (size_t i = 0; i < num_frames; ++i) {
+        if (!frames[i]) continue;
+        if (!vals.exists(i)) continue; // guard
         Eigen::Isometry3f pose(vals.at<gtsam::Pose3>(i).matrix().cast<float>());
 
         const std::string& id = ids[i];
@@ -437,6 +462,8 @@ private:
         size_t j_end = full_connection ? num_frames
                                        : std::min(i + 2, num_frames);
         for (size_t j = i + 1; j < j_end; ++j) {
+          if (!frames[j]) continue;
+          if (!vals.exists(j)) continue; // guard
           lines.push_back(vals.at<gtsam::Pose3>(i).translation().cast<float>());
           lines.push_back(vals.at<gtsam::Pose3>(j).translation().cast<float>());
         }
@@ -455,7 +482,18 @@ private:
       const gtsam_points::GaussianVoxelMap::ConstPtr& tgt_vm_gpu,
       const gtsam_points::PointCloud::ConstPtr& src_pc) {
 
+    if (!tgt_pc || !src_pc) return nullptr;
     const std::string& ft = factor_types[factor_type];
+
+    if (ft == "VGICP" && !tgt_vm) return nullptr;
+    if (ft == "VGICP_GPU") {
+#ifndef GTSAM_POINTS_USE_CUDA
+      return nullptr;
+#else
+      if (!tgt_vm_gpu) return nullptr;
+#endif
+    }
+
     if (ft == "ICP") {
       auto f = gtsam::make_shared<gtsam_points::IntegratedICPFactor>(tgt, src, tgt_pc, src_pc);
       f->set_correspondence_update_tolerance(correspondence_update_tolerance_rot,
@@ -493,18 +531,32 @@ private:
   }
 
   void run_optimization() {
+    if (root_key_ == std::numeric_limits<size_t>::max()) {
+      std::cerr << "[ERROR] No root key available for prior.\n";
+      return;
+    }
+
     gtsam::NonlinearFactorGraph graph;
     graph.add(gtsam::PriorFactor<gtsam::Pose3>(
-        0, poses.at<gtsam::Pose3>(0),
+        root_key_, poses.at<gtsam::Pose3>(root_key_),
         gtsam::noiseModel::Isotropic::Precision(6, 1e6)));
 
     for (size_t i = 0; i < num_frames; ++i) {
+      if (!active[i]) continue;
       size_t j_end = full_connection ? num_frames
                                      : std::min(i + 2, num_frames);
       for (size_t j = i + 1; j < j_end; ++j) {
+        if (!active[j]) continue;
+        if (!frames[i] || !frames[j]) continue;
         auto f = create_factor(i, j, frames[i], voxelmaps[i], voxelmaps_gpu[i], frames[j]);
         if (f) graph.add(f);
       }
+    }
+
+    if (graph.size() <= 1) { // only the prior present
+      std::cerr << "[WARN] Only a prior factor present (no pairwise constraints). Writing initial.\n";
+      save_values(poses, args.root + "/optimized.txt");
+      return;
     }
 
     if (optimizer_types[optimizer_type] == std::string("LM")) {
@@ -530,6 +582,7 @@ private:
       isam2.update(graph, poses);
       if (!args.headless) update_viewer(isam2.calculateEstimate());
       for (size_t i = 0; i < num_frames; ++i) {
+        if (!active[i]) continue;
         isam2.update();
         if (!args.headless) update_viewer(isam2.calculateEstimate());
       }
@@ -554,6 +607,10 @@ private:
   std::vector<std::string> ids;
   std::vector<gtsam::Pose3> init_poses;
 
+  // New: track which frames actually loaded, and which key to anchor
+  std::vector<char> active;  // 1 if frame i is loaded and inserted
+  size_t root_key_{std::numeric_limits<size_t>::max()};
+
   gtsam::Values poses, poses_gt;
   std::vector<gtsam_points::PointCloud::Ptr>       frames;
   std::vector<gtsam_points::GaussianVoxelMap::Ptr> voxelmaps, voxelmaps_gpu;
@@ -571,3 +628,4 @@ int main(int argc, char** argv) {
   }
   return 0;
 }
+
