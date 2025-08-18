@@ -21,6 +21,7 @@ option(BUILD_WITH_CUDA_MULTIARCH "Build with CUDA multi-architecture support" OF
 option(BUILD_WITH_MARCH_NATIVE "Build with -march=native" OFF)
 option(ENABLE_CPPCHECK "Enable cppcheck" OFF)
 option(ENABLE_COVERAGE "Enable coverage check" OFF)
+option(BUILD_PYTHON "Build Python pybind module" ON)
 
 if(BUILD_WITH_MARCH_NATIVE)
   set(GTSAM_POINTS_WITH_MARCH_NATIVE 1)
@@ -53,6 +54,10 @@ endif()
 if(${BUILD_WITH_CUDA} AND ${EIGEN3_VERSION_STRING} AND ${EIGEN3_VERSION_STRING} VERSION_LESS "3.3.90")
   message(WARNING "Detected Eigen ${EIGEN3_VERSION_STRING} is not compatible with CUDA")
   message(WARNING "Use Eigen 3.3.90 or later (3.4.0 is recommended)")
+endif()
+
+if(BUILD_PYTHON)
+  add_subdirectory(bindings/python)
 endif()
 
 # GPU-related

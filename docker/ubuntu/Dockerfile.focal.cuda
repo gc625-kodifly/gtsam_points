@@ -13,6 +13,9 @@ RUN apt-get update \
   && apt-fast clean \
   && rm -rf /var/lib/apt/lists/*
 
+  RUN apt update && apt install -y python3-pip \
+    && python3 -m pip install pybind11 \
+    && echo "export CMAKE_PREFIX_PATH=\$(python3 -m pybind11 --cmakedir):\$CMAKE_PREFIX_PATH" >> /etc/bash.bashrc 
 # System eigen on focal is too old.
 # Install Eigen that is newer but compatible with 3.3.7 used by GTSAM.
 RUN git clone https://gitlab.com/libeigen/eigen.git
@@ -21,18 +24,40 @@ RUN git checkout 1fd5ce1
 WORKDIR /root/eigen/build
 RUN cmake .. && make install
 
+
+
+WORKDIR /root/
+RUN git clone https://github.com/LAStools/LAStools.git 
+WORKDIR /root/LAStools
+RUN cmake -DCMAKE_BUILD_TYPE=Release CMakeLists.txt  && \
+  cmake --build . && \
+  make install
+
+WORKDIR /root/
+RUN git clone https://github.com/koide3/small_gicp.git
+WORKDIR /root/small_gicp
+RUN mkdir -p build && cd build && \
+  cmake .. -DCMAKE_BUILD_TYPE=Release && make -j && \
+  make install
+
 # COPY . /root/gtsam_points
 WORKDIR /root/gtsam_points/build
+
+
+ENV PYTHONPATH="/root/gtsam_points/build/python:\${PYTHONPATH}"
+
+
 # RUN rm -rf *
-RUN cmake .. \
-  -DBUILD_DEMO=ON \
-  -DBUILD_TESTS=ON \
-  -DBUILD_EXAMPLE=ON \
-  -DBUILD_WITH_TBB=${BUILD_WITH_TBB} \
-  -DBUILD_WITH_CUDA=ON \
-  -DBUILD_WITH_CUDA_MULTIARCH=ON \
-  -DCMAKE_BUILD_TYPE=Release && \
-  make -j$(nproc) && \
-  make install 
+
+# RUN cmake .. \
+#   -DBUILD_DEMO=ON \
+#   -DBUILD_TESTS=ON \
+#   -DBUILD_EXAMPLE=ON \
+#   -DBUILD_WITH_TBB=${BUILD_WITH_TBB} \
+#   -DBUILD_WITH_CUDA=ON \
+#   -DBUILD_WITH_CUDA_MULTIARCH=ON \
+#   -DCMAKE_BUILD_TYPE=Release && \
+#   make -j$(nproc) && \
+#   make install 
 
 CMD ["bash"]

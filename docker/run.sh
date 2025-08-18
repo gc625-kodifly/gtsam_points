@@ -15,3 +15,4 @@ docker run -it --rm --runtime=nvidia --net=host --privileged \
   -v /home/gabriel/gtsam_points:/root/gtsam_points \
   -v /home/gabriel/gtsam_points/data:/root/gtsam_points/data \
   docker.io/gc625kodifly/gtsam_docker:focal_cuda12.2
+  # docker.io/gc625kodifly/server:smart-eye
