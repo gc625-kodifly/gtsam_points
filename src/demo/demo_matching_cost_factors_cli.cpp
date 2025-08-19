@@ -268,6 +268,14 @@ public:
 #endif
     }
 
+    
+    
+    
+    
+    
+    
+    
+    
     /* --------------- algorithm choices ------------------------------------ */
     optimizer_types  = {"LM", "ISAM2"};
     factor_types     = {"ICP", "ICP_PLANE", "GICP", "VGICP"

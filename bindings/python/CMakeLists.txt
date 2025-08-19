@@ -1,35 +1,30 @@
-cmake_minimum_required(VERSION 3.15)
+# We are inside bindings/python. No need for project() again.
 
-# You can also use CONFIG if you installed pybind11 system-wide:
-# find_package(pybind11 CONFIG REQUIRED)
-find_package(pybind11 REQUIRED)
+# Find dependencies (safe to call here too)
+find_package(pybind11 CONFIG REQUIRED)
+find_package(Eigen3 REQUIRED)
 
-add_library(gtsam_points_py MODULE
-  gtsam_points_py.cpp
+# Build the Python extension. The name here must match PYBIND11_MODULE(...)
+pybind11_add_module(gtsam_points_py
+    gtsam_points_py.cpp
 )
 
-# Link against your core library target
+# Link dependencies
 target_link_libraries(gtsam_points_py
-  PRIVATE
-    pybind11::module
-    gtsam_points
+    PRIVATE
+      Eigen3::Eigen
+      $<TARGET_NAME_IF_EXISTS:gtsam_points>   # link core lib if it exists
 )
 
-# Propagate CUDA define if you build with CUDA
-if(BUILD_WITH_CUDA)
-  target_compile_definitions(gtsam_points_py PRIVATE GTSAM_POINTS_USE_CUDA)
-endif()
-
-# Nice module name & drop the "lib" prefix
+# Nice settings for Python extensions
 set_target_properties(gtsam_points_py PROPERTIES
-  PREFIX ""
-  OUTPUT_NAME "gtsam_points_py"
-  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/python"
+    PREFIX ""                                         # no "lib" prefix
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}  # drop .so here
 )
 
-target_compile_features(gtsam_points_py PRIVATE cxx_std_17)
+# Optional: more detailed pybind11 error messages
+target_compile_definitions(gtsam_points_py PRIVATE PYBIND11_DETAILED_ERROR_MESSAGES)
 
-# (Optional) install rule — uncomment and adjust if you want `make install` to place it.
-install(TARGETS gtsam_points_py
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/python
+set_target_properties(gtsam_points_py PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/python
 )

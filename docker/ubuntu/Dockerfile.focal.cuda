@@ -43,7 +43,7 @@ RUN mkdir -p build && cd build && \
 # COPY . /root/gtsam_points
 WORKDIR /root/gtsam_points/build
 
-
+RUN python3 -m pip install numpy laspy[laszip] matplotlib pyyaml
 ENV PYTHONPATH="/root/gtsam_points/build/python:\${PYTHONPATH}"
 
 

@@ -56,9 +56,7 @@ if(${BUILD_WITH_CUDA} AND ${EIGEN3_VERSION_STRING} AND ${EIGEN3_VERSION_STRING} 
   message(WARNING "Use Eigen 3.3.90 or later (3.4.0 is recommended)")
 endif()
 
-if(BUILD_PYTHON)
-  add_subdirectory(bindings/python)
-endif()
+
 
 # GPU-related
 if(BUILD_WITH_CUDA)
@@ -227,7 +225,9 @@ target_link_libraries(gtsam_points
   $<TARGET_NAME_IF_EXISTS:TBB::tbb>
   $<TARGET_NAME_IF_EXISTS:OpenMP::OpenMP_CXX>
 )
-
+if(BUILD_PYTHON)
+  add_subdirectory(bindings/python)
+endif()
 # GPU-related
 if(BUILD_WITH_CUDA)
   add_library(gtsam_points_cuda SHARED
