@@ -40,10 +40,14 @@ RUN mkdir -p build && cd build && \
   cmake .. -DCMAKE_BUILD_TYPE=Release && make -j && \
   make install
 
+WORKDIR /root
+RUN git clone https://github.com/potree/PotreeConverter
+WORKDIR /root/PotreeConverter
+RUN mkdir build && cd build && cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ../
 # COPY . /root/gtsam_points
 WORKDIR /root/gtsam_points/build
 
-RUN python3 -m pip install numpy laspy[laszip] matplotlib pyyaml
+RUN python3 -m pip install numpy laspy[laszip] matplotlib pyyaml small_gicp numpy-quaternion
 ENV PYTHONPATH="/root/gtsam_points/build/python:\${PYTHONPATH}"
 
 

@@ -31,7 +31,8 @@
 #include <gtsam_points/optimizers/levenberg_marquardt_ext.hpp>
 #include <gtsam_points/optimizers/linearization_hook.hpp>
 
-
+#include <small_gicp/points/point_cloud.hpp>
+#include <small_gicp/util/downsampling_omp.hpp>
 
 
 
@@ -61,6 +62,8 @@ struct OptimizerParams{
   float correspondence_update_tolerance_trans;
   std::string optimizer_type;
   std::string factor_type;
+  double prior_translation_sigma;
+  double prior_rotation_sigma;
 };
 
 
@@ -86,11 +89,11 @@ public:
 
     for (std::size_t i = 0; i < num_frames; ++i) {
       const auto& f = frame_data[i];      
-      py::print(
-        "loading frame:",f.id,
-        "pose shape:", f.pose.rows(), "x", f.pose.cols(),
-        "points shape:", f.points.rows(), "x", f.points.cols()
-      );
+      // py::print(
+      //   "loading frame:",f.id,
+      //   "pose shape:", f.pose,
+      //   "points shape:", f.points.rows(), "x", f.points.cols()
+      // );
       
       ids[i] = f.id;
       gtsam::Pose3 P(
@@ -101,9 +104,38 @@ public:
       poses.insert(i, P);
       poses_gt.insert(i, P);
 
+      // std::vector<Eigen::Vector3f> pts_f;
+      // pts_f.reserve(static_cast<size_t>(f.points.rows()));
+      // for (Eigen::Index r = 0; r < f.points.rows(); ++r) {
+      //   // small_gicp PointCloud ctor expects float3; this matches the demo path
+      //   pts_f.emplace_back(
+      //     static_cast<float>(f.points(r, 0)),
+      //     static_cast<float>(f.points(r, 1)),
+      //     static_cast<float>(f.points(r, 2))
+      //   );
+      // }
+
+      // auto gicp_cloud = std::make_shared<small_gicp::PointCloud>(pts_f);
+      // std::vector<Eigen::Vector3d> pts3d;
+      // pts3d.reserve(static_cast<size_t>(f.points.rows()));
+      // for (Eigen::Index r = 0; r < f.points.rows(); ++r) {
+      //   pts3d.emplace_back(f.points(r,0), f.points(r,1), f.points(r,2));
+      // }
+      // auto gicp_cloud = std::make_shared<small_gicp::PointCloud>(pts3d);
+
+      // gicp_cloud = small_gicp:: voxelgrid_sampling_omp(
+      //   *gicp_cloud, 0.3, 16
+      // );
+
+      // std::cout << "num points after downsampling : " << gicp_cloud->size() << std::endl;
+
+      // const std::vector<Eigen::Vector4d>& pts_d = gicp_cloud->points;
+
+
       std::vector<Eigen::Vector4d> pts_d; 
       pts_d.reserve(static_cast<size_t>(f.points.rows()));
       for (Eigen::Index r = 0; r < f.points.rows(); ++r){
+        pts_d.emplace_back(f.points(r,0), f.points(r,1), f.points(r,2), 1.0);
         pts_d.emplace_back(
           static_cast<float>(f.points(r,0)),
           static_cast<float>(f.points(r,1)),
@@ -116,17 +148,17 @@ public:
       auto covs = gtsam_points::estimate_covariances(pts_d);
 
 #ifndef GTSAM_POINTS_USE_CUDA
-      py::print("using PointCloudCPU");
+      // py::print("using PointCloudCPU");
       auto frame = std::make_shared<gtsam_points::PointCloudCPU>();
 #else
-      py::print("using PointCloudGPU");
+      // py::print("using PointCloudGPU");
       auto frame = std::make_shared<gtsam_points::PointCloudGPU>();
 #endif
-      py::print("adding points for idx:", i);
+      // py::print("adding points for idx:", i);
       frame->add_points(pts_d);
-      py::print("adding covs for idx:", i);
+      // py::print("adding covs for idx:", i);
       frame->add_covs(covs);
-      py::print("adding norms for idx:", i);
+      // py::print("adding norms for idx:", i);
       frame->add_normals(gtsam_points::estimate_normals(frame->points, frame->size()));
       
       frames[i] = frame;
@@ -172,13 +204,16 @@ public:
       f->set_correspondence_update_tolerance(opt_params.correspondence_update_tolerance_rot,
                                              opt_params.correspondence_update_tolerance_trans);
       f->set_num_threads(opt_params.num_threads);
+      py::print("using GICP factor");
       return f;
     }
     if (opt_params.factor_type == "VGICP") {
+      py::print("using VGICP factor");
       return gtsam::make_shared<gtsam_points::IntegratedVGICPFactor>(tgt, src, tgt_vm, src_pc);
     }
 #ifdef GTSAM_POINTS_USE_CUDA
     if (opt_params.factor_type == "VGICP_GPU") {
+      py::print("using VGICP_GPU factor");
       return gtsam::make_shared<gtsam_points::IntegratedVGICPFactorGPU>(tgt, src, tgt_vm_gpu, src_pc);
     }
 #endif
@@ -194,11 +229,23 @@ public:
 
     gtsam::NonlinearFactorGraph graph;
 
-    graph.add(gtsam::PriorFactor<gtsam::Pose3>(
-      0, poses.at<gtsam::Pose3>(0),
-      gtsam::noiseModel::Isotropic::Precision(6, 1e6)
-    ));
-   
+
+    // graph.add(gtsam::PriorFactor<gtsam::Pose3>(
+    //   0, poses.at<gtsam::Pose3>(0),
+    //   gtsam::noiseModel::Isotropic::Precision(6, 1e6)
+    // ));
+  
+    const double trans_sigma = opt_params.prior_translation_sigma;                   // meters
+    const double rot_sigma   = opt_params.prior_rotation_sigma * M_PI / 180.0;    // radians
+
+    auto soft_prior = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector6() <<
+      rot_sigma, rot_sigma, rot_sigma,      // ωx, ωy, ωz
+      trans_sigma, trans_sigma, trans_sigma // tx, ty, tz
+    ).finished());
+
+
+    graph.add(gtsam::PriorFactor<gtsam::Pose3>(0, poses.at<gtsam::Pose3>(0), soft_prior));
+
     
     size_t num_added = 0;
 
@@ -216,6 +263,8 @@ public:
 
 
     if (opt_params.optimizer_type == std::string("LM")){
+      py::print("using LM optimizer");
+
       gtsam_points::LevenbergMarquardtExtParams prm;
       prm.maxIterations = 300;
       prm.callback = [](auto& st, const gtsam::Values&){
@@ -228,6 +277,7 @@ public:
     }
 
     else{
+      py::print("using ISAM optimizer");
       gtsam::ISAM2Params p;
       p.relinearizeSkip = 1;
       p.setRelinearizeThreshold(0.f);
@@ -290,17 +340,23 @@ PYBIND11_MODULE(gtsam_points_py, m){
       const float&, 
       const float&, 
       const std::string&, 
-      const std::string&>(),
+      const std::string&,
+      const double&,
+      const double&>(),
     py::arg("full_connection"),
     py::arg("num_threads"), py::arg("correspondence_update_tolerance_rot"), 
     py::arg("correspondence_update_tolerance_trans"), py::arg("optimizer_type"),
-    py::arg("factor_type"))
+    py::arg("factor_type"),
+    py::arg("prior_translation_sigma"),
+    py::arg("prior_rotation_sigma"))
     .def_readwrite("full_connection", &OptimizerParams::full_connection)
     .def_readwrite("num_threads", &OptimizerParams::num_threads)
     .def_readwrite("correspondence_update_tolerance_rot", &OptimizerParams::correspondence_update_tolerance_rot)
     .def_readwrite("correspondence_update_tolerance_trans", &OptimizerParams::correspondence_update_tolerance_trans)
     .def_readwrite("optimizer_type", &OptimizerParams::optimizer_type)
-    .def_readwrite("factor_type", &OptimizerParams::factor_type);
+    .def_readwrite("factor_type", &OptimizerParams::factor_type)
+    .def_readwrite("prior_translation_sigma", &OptimizerParams::prior_translation_sigma)
+    .def_readwrite("prior_rotation_sigma", &OptimizerParams::prior_rotation_sigma);
 
 
    
