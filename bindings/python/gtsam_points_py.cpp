@@ -62,10 +62,31 @@ struct OptimizerParams{
   float correspondence_update_tolerance_trans;
   std::string optimizer_type;
   std::string factor_type;
-  double prior_translation_sigma;
-  double prior_rotation_sigma;
+  double prior_translation_sigma_x;
+  double prior_translation_sigma_y;
+  double prior_translation_sigma_z;
+  double prior_rotation_sigma_x;  // degrees
+  double prior_rotation_sigma_y;  // degrees
+  double prior_rotation_sigma_z;  // degrees
 };
 
+struct OptimizationStats {
+  std::vector<int> iterations;
+  std::vector<int> total_inner_iterations;
+  std::vector<double> errors;
+  std::vector<double> cost_changes;
+  std::vector<double> lambda_values;
+  std::vector<int> solve_success;            // 1 if true, 0 otherwise
+  std::vector<double> elapsed_times;
+  std::vector<double> linearization_times;
+  std::vector<double> lambda_iteration_times;
+  std::vector<double> linear_solver_times;
+  std::vector<std::string> lines;  // textual snapshot per iteration
+  bool converged;
+  std::string termination_reason;
+  
+  OptimizationStats() : converged(false) {}
+};
 
 
 class CostFactorMerge {
@@ -224,7 +245,7 @@ public:
 
 
         
-  void run_optimization(){
+  std::tuple<py::dict, OptimizationStats> run_optimization(){
 
 
     gtsam::NonlinearFactorGraph graph;
@@ -235,12 +256,16 @@ public:
     //   gtsam::noiseModel::Isotropic::Precision(6, 1e6)
     // ));
   
-    const double trans_sigma = opt_params.prior_translation_sigma;                   // meters
-    const double rot_sigma   = opt_params.prior_rotation_sigma * M_PI / 180.0;    // radians
+    const double tx_sigma = opt_params.prior_translation_sigma_x;
+    const double ty_sigma = opt_params.prior_translation_sigma_y;
+    const double tz_sigma = opt_params.prior_translation_sigma_z;
+    const double rx_sigma = opt_params.prior_rotation_sigma_x * M_PI / 180.0; // rad
+    const double ry_sigma = opt_params.prior_rotation_sigma_y * M_PI / 180.0; // rad
+    const double rz_sigma = opt_params.prior_rotation_sigma_z * M_PI / 180.0; // rad
 
     auto soft_prior = gtsam::noiseModel::Diagonal::Sigmas((gtsam::Vector6() <<
-      rot_sigma, rot_sigma, rot_sigma,      // ωx, ωy, ωz
-      trans_sigma, trans_sigma, trans_sigma // tx, ty, tz
+      rx_sigma, ry_sigma, rz_sigma,      // ωx, ωy, ωz
+      tx_sigma, ty_sigma, tz_sigma       // tx, ty, tz
     ).finished());
 
 
@@ -262,18 +287,34 @@ public:
     }
 
 
+    OptimizationStats stats;
     if (opt_params.optimizer_type == std::string("LM")){
       py::print("using LM optimizer");
 
       gtsam_points::LevenbergMarquardtExtParams prm;
       prm.maxIterations = 300;
-      prm.callback = [](auto& st, const gtsam::Values&){
+      prm.callback = [&stats](const gtsam_points::LevenbergMarquardtOptimizationStatus& st, const gtsam::Values&){
+        // Structured fields
+        stats.iterations.push_back(st.iterations);
+        stats.total_inner_iterations.push_back(st.total_inner_iterations);
+        stats.errors.push_back(st.error);
+        stats.cost_changes.push_back(st.cost_change);
+        stats.lambda_values.push_back(st.lambda);
+        stats.solve_success.push_back(st.solve_success ? 1 : 0);
+        stats.elapsed_times.push_back(st.elapsed_time);
+        stats.linearization_times.push_back(st.linearization_time);
+        stats.lambda_iteration_times.push_back(st.lambda_iteration_time);
+        stats.linear_solver_times.push_back(st.linear_solver_time);
+        // Text line (for convenience)
+        stats.lines.push_back(st.to_string());
         std::cout << st.to_string() << std::endl;
       };
 
       gtsam_points::LevenbergMarquardtOptimizerExt opt(graph, poses, prm);
       opt.optimize();
       result_ = opt.values();
+      stats.converged = true;  // LM completed
+      stats.termination_reason = "LM completed";
     }
 
     else{
@@ -288,9 +329,13 @@ public:
         isam2.update();
       }
       result_ = isam2.calculateEstimate(); 
+      
+      // ISAM2 doesn't provide detailed iteration stats like LM
+      stats.converged = true;
+      stats.termination_reason = "ISAM2 completed";
     }
 
-    
+    return std::make_tuple(get_optimized_poses(), stats);
   }
   py::dict get_optimized_poses() const {
     py::dict out;
@@ -334,6 +379,22 @@ PYBIND11_MODULE(gtsam_points_py, m){
     .def_readwrite("points", &FrameData::points);
    // m.def("consume_dict", &consume_dict, "Parse dict[str, ndarray] into C++");
 
+  py::class_<OptimizationStats>(m, "OptimizationStats")
+    .def(py::init<>())
+    .def_readwrite("iterations", &OptimizationStats::iterations)
+    .def_readwrite("total_inner_iterations", &OptimizationStats::total_inner_iterations)
+    .def_readwrite("errors", &OptimizationStats::errors)
+    .def_readwrite("cost_changes", &OptimizationStats::cost_changes)
+    .def_readwrite("lambda_values", &OptimizationStats::lambda_values)
+    .def_readwrite("solve_success", &OptimizationStats::solve_success)
+    .def_readwrite("elapsed_times", &OptimizationStats::elapsed_times)
+    .def_readwrite("linearization_times", &OptimizationStats::linearization_times)
+    .def_readwrite("lambda_iteration_times", &OptimizationStats::lambda_iteration_times)
+    .def_readwrite("linear_solver_times", &OptimizationStats::linear_solver_times)
+    .def_readwrite("lines", &OptimizationStats::lines)
+    .def_readwrite("converged", &OptimizationStats::converged)
+    .def_readwrite("termination_reason", &OptimizationStats::termination_reason);
+
   py::class_<OptimizerParams>(m, "OptimizerParams")
     .def(py::init<const bool&, 
       const int&, 
@@ -341,23 +402,30 @@ PYBIND11_MODULE(gtsam_points_py, m){
       const float&, 
       const std::string&, 
       const std::string&,
-      const double&,
-      const double&>(),
+      const double&, const double&, const double&,
+      const double&, const double&, const double&>(),
     py::arg("full_connection"),
     py::arg("num_threads"), py::arg("correspondence_update_tolerance_rot"), 
     py::arg("correspondence_update_tolerance_trans"), py::arg("optimizer_type"),
     py::arg("factor_type"),
-    py::arg("prior_translation_sigma"),
-    py::arg("prior_rotation_sigma"))
+    py::arg("prior_translation_sigma_x"),
+    py::arg("prior_translation_sigma_y"),
+    py::arg("prior_translation_sigma_z"),
+    py::arg("prior_rotation_sigma_x"),  // degrees
+    py::arg("prior_rotation_sigma_y"),
+    py::arg("prior_rotation_sigma_z"))
     .def_readwrite("full_connection", &OptimizerParams::full_connection)
     .def_readwrite("num_threads", &OptimizerParams::num_threads)
     .def_readwrite("correspondence_update_tolerance_rot", &OptimizerParams::correspondence_update_tolerance_rot)
     .def_readwrite("correspondence_update_tolerance_trans", &OptimizerParams::correspondence_update_tolerance_trans)
     .def_readwrite("optimizer_type", &OptimizerParams::optimizer_type)
     .def_readwrite("factor_type", &OptimizerParams::factor_type)
-    .def_readwrite("prior_translation_sigma", &OptimizerParams::prior_translation_sigma)
-    .def_readwrite("prior_rotation_sigma", &OptimizerParams::prior_rotation_sigma);
-
+    .def_readwrite("prior_translation_sigma_x", &OptimizerParams::prior_translation_sigma_x)
+    .def_readwrite("prior_translation_sigma_y", &OptimizerParams::prior_translation_sigma_y)
+    .def_readwrite("prior_translation_sigma_z", &OptimizerParams::prior_translation_sigma_z)
+    .def_readwrite("prior_rotation_sigma_x", &OptimizerParams::prior_rotation_sigma_x)
+    .def_readwrite("prior_rotation_sigma_y", &OptimizerParams::prior_rotation_sigma_y)
+    .def_readwrite("prior_rotation_sigma_z", &OptimizerParams::prior_rotation_sigma_z);
 
    
   py::class_<CostFactorMerge>(m, "CostFactorMerge")
@@ -366,8 +434,7 @@ PYBIND11_MODULE(gtsam_points_py, m){
          "Load a list of FrameData into the merger")
     .def("size", &CostFactorMerge::size)
     .def("ids", &CostFactorMerge::get_ids)
-    .def("run_optimization", &CostFactorMerge::run_optimization)
+    .def("run_optimization", &CostFactorMerge::run_optimization, "Run optimization and return (poses, stats)")
     .def("get_optimized_poses", &CostFactorMerge::get_optimized_poses);
-
 
 }
