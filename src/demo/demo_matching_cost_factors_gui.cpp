@@ -121,7 +121,7 @@ static bool parse_cli(int argc, char** argv, Args& out) {
 }
 
 /* ---------- IO helpers ---------------------------------------------------- */
-static bool file_exists(const std::string& path) {
+static bool local_file_exists(const std::string& path) {
   std::ifstream f(path.c_str(), std::ios::in);
   return (bool)f;
 }
@@ -235,7 +235,7 @@ public:
     auto load_one = [&](size_t i) {
       const std::string& id = ids[i];
       const std::string points_path = compose_points_path(args, id);
-      if (!file_exists(points_path)) {
+      if (!local_file_exists(points_path)) {
         std::lock_guard<std::mutex> lk(print_mu);
         std::cerr << "[WARN] missing file: " << points_path << " — skipping\n";
         return; // leave frames[i] == nullptr
