@@ -116,6 +116,14 @@ public:
 PointCloudCPU::Ptr sample(const PointCloud::ConstPtr& points, const std::vector<int>& indices);
 
 /**
+ * @brief Sample points from multiple frames by indices
+ * @param frames               Input frames
+ * @param frame_point_indices  Point indices for each frame (packed as (frame_id << 32) | point_id)
+ * @return                     Sampled points
+ */
+PointCloudCPU::Ptr sample_multi_frames(const std::vector<PointCloud::ConstPtr>& frames, const std::vector<std::uint64_t>& frame_point_indices);
+
+/**
  * @brief Naive random sampling.
  * @param points         Input points
  * @param sampling_rate  Random sampling rate in [0, 1]
