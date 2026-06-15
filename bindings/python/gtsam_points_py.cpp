@@ -2,6 +2,7 @@
 #include <pybind11/stl.h>
 #include <pybind11/eigen.h>
 #include <Eigen/Core>
+#include <algorithm>
 #include <map>
 #include <string>
 #include <vector>
@@ -68,6 +69,8 @@ struct OptimizerParams{
   double prior_rotation_sigma_x;  // degrees
   double prior_rotation_sigma_y;  // degrees
   double prior_rotation_sigma_z;  // degrees
+  bool per_node_priors;  // anchor every node with its initial pose (GNSS prior)
+  double min_translation_sigma;  // metres; mirrors GUI lower bound when requested
 };
 
 struct OptimizationStats {
@@ -153,10 +156,9 @@ public:
       // const std::vector<Eigen::Vector4d>& pts_d = gicp_cloud->points;
 
 
-      std::vector<Eigen::Vector4d> pts_d; 
+      std::vector<Eigen::Vector4d> pts_d;
       pts_d.reserve(static_cast<size_t>(f.points.rows()));
       for (Eigen::Index r = 0; r < f.points.rows(); ++r){
-        pts_d.emplace_back(f.points(r,0), f.points(r,1), f.points(r,2), 1.0);
         pts_d.emplace_back(
           static_cast<float>(f.points(r,0)),
           static_cast<float>(f.points(r,1)),
@@ -256,9 +258,9 @@ public:
     //   gtsam::noiseModel::Isotropic::Precision(6, 1e6)
     // ));
   
-    const double tx_sigma = opt_params.prior_translation_sigma_x;
-    const double ty_sigma = opt_params.prior_translation_sigma_y;
-    const double tz_sigma = opt_params.prior_translation_sigma_z;
+    const double tx_sigma = std::max(opt_params.prior_translation_sigma_x, opt_params.min_translation_sigma);
+    const double ty_sigma = std::max(opt_params.prior_translation_sigma_y, opt_params.min_translation_sigma);
+    const double tz_sigma = std::max(opt_params.prior_translation_sigma_z, opt_params.min_translation_sigma);
     const double rx_sigma = opt_params.prior_rotation_sigma_x * M_PI / 180.0; // rad
     const double ry_sigma = opt_params.prior_rotation_sigma_y * M_PI / 180.0; // rad
     const double rz_sigma = opt_params.prior_rotation_sigma_z * M_PI / 180.0; // rad
@@ -269,7 +271,14 @@ public:
     ).finished());
 
 
-    graph.add(gtsam::PriorFactor<gtsam::Pose3>(0, poses.at<gtsam::Pose3>(0), soft_prior));
+    if (opt_params.per_node_priors) {
+      // Anchor every node with its initial (GNSS) pose.
+      for (size_t i = 0; i < num_frames; ++i) {
+        graph.add(gtsam::PriorFactor<gtsam::Pose3>(i, poses.at<gtsam::Pose3>(i), soft_prior));
+      }
+    } else {
+      graph.add(gtsam::PriorFactor<gtsam::Pose3>(0, poses.at<gtsam::Pose3>(0), soft_prior));
+    }
 
     
     size_t num_added = 0;
@@ -403,7 +412,9 @@ PYBIND11_MODULE(gtsam_points_py, m){
       const std::string&, 
       const std::string&,
       const double&, const double&, const double&,
-      const double&, const double&, const double&>(),
+      const double&, const double&, const double&,
+      const bool&,
+      const double&>(),
     py::arg("full_connection"),
     py::arg("num_threads"), py::arg("correspondence_update_tolerance_rot"), 
     py::arg("correspondence_update_tolerance_trans"), py::arg("optimizer_type"),
@@ -413,7 +424,9 @@ PYBIND11_MODULE(gtsam_points_py, m){
     py::arg("prior_translation_sigma_z"),
     py::arg("prior_rotation_sigma_x"),  // degrees
     py::arg("prior_rotation_sigma_y"),
-    py::arg("prior_rotation_sigma_z"))
+    py::arg("prior_rotation_sigma_z"),
+    py::arg("per_node_priors") = true,
+    py::arg("min_translation_sigma") = 0.0)
     .def_readwrite("full_connection", &OptimizerParams::full_connection)
     .def_readwrite("num_threads", &OptimizerParams::num_threads)
     .def_readwrite("correspondence_update_tolerance_rot", &OptimizerParams::correspondence_update_tolerance_rot)
@@ -425,7 +438,9 @@ PYBIND11_MODULE(gtsam_points_py, m){
     .def_readwrite("prior_translation_sigma_z", &OptimizerParams::prior_translation_sigma_z)
     .def_readwrite("prior_rotation_sigma_x", &OptimizerParams::prior_rotation_sigma_x)
     .def_readwrite("prior_rotation_sigma_y", &OptimizerParams::prior_rotation_sigma_y)
-    .def_readwrite("prior_rotation_sigma_z", &OptimizerParams::prior_rotation_sigma_z);
+    .def_readwrite("prior_rotation_sigma_z", &OptimizerParams::prior_rotation_sigma_z)
+    .def_readwrite("per_node_priors", &OptimizerParams::per_node_priors)
+    .def_readwrite("min_translation_sigma", &OptimizerParams::min_translation_sigma);
 
    
   py::class_<CostFactorMerge>(m, "CostFactorMerge")

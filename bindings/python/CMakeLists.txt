@@ -9,6 +9,11 @@ pybind11_add_module(gtsam_points_py
     gtsam_points_py.cpp
 )
 
+# Vendored header-only small_gicp (used for voxel downsampling helpers)
+target_include_directories(gtsam_points_py PRIVATE
+    ${CMAKE_SOURCE_DIR}/thirdparty/small_gicp/include
+)
+
 # Link dependencies
 target_link_libraries(gtsam_points_py
     PRIVATE
