@@ -1,0 +1,46 @@
+# CPU-only pose-graph georeferencing for Ubuntu 22.04 / ROS 2 Humble (Python 3.10).
+# Matches the smart_eye_firmware webui base (osrf/ros:humble-desktop-jammy) so the
+# compiled gtsam_points binding is ABI-compatible with that container.
+#
+# Build context = gtsam_points repo root:
+#   docker build -f pgo_georef/Dockerfile.jammy -t scanstation-pgo:jammy .
+FROM osrf/ros:humble-desktop-jammy
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# GTSAM 4.2 (borglab PPA) + build toolchain. GTSAM/Boost/Eigen are required;
+# LASlib is intentionally omitted (clouds are read via laspy in Python).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      software-properties-common gnupg ca-certificates \
+ && add-apt-repository -y ppa:borglab/gtsam-release-4.2 \
+ && apt-get update && apt-get install -y --no-install-recommends \
+      build-essential cmake git \
+      libboost-all-dev libeigen3-dev libtbb-dev \
+      libgtsam-dev libgtsam-unstable-dev \
+      python3-pip python3-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m pip install --no-cache-dir pybind11 "numpy>=1.20" "laspy[laszip]>=2.0"
+
+# small_gicp headers — the binding includes them (usage is header-only here).
+RUN git clone --depth 1 https://github.com/koide3/small_gicp.git /tmp/small_gicp \
+ && cmake -S /tmp/small_gicp -B /tmp/small_gicp/build \
+      -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON=OFF -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF \
+ && cmake --build /tmp/small_gicp/build --target install -j"$(nproc)" \
+ && rm -rf /tmp/small_gicp
+
+COPY . /opt/gtsam_points
+WORKDIR /opt/gtsam_points
+
+RUN git config --global --add safe.directory /opt/gtsam_points || true && \
+    cmake -B build_cpu -S . \
+      -DBUILD_WITH_CUDA=OFF -DBUILD_PYTHON=ON -DBUILD_DEMO=OFF -DBUILD_TESTS=OFF \
+      -DCMAKE_BUILD_TYPE=Release \
+      -Dpybind11_DIR="$(python3 -m pybind11 --cmakedir)" && \
+    cmake --build build_cpu --target gtsam_points_py -j"$(nproc)"
+
+ENV LD_LIBRARY_PATH=/opt/gtsam_points/build_cpu:${LD_LIBRARY_PATH}
+ENV GTSAM_POINTS_BUILD_DIR=/opt/gtsam_points/build_cpu
+ENV PYTHONPATH=/opt/gtsam_points:${PYTHONPATH}
+
+ENTRYPOINT ["python3", "-m", "pgo_georef.cli"]

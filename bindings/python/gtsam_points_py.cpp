@@ -68,6 +68,8 @@ struct OptimizerParams{
   double prior_rotation_sigma_x;  // degrees
   double prior_rotation_sigma_y;  // degrees
   double prior_rotation_sigma_z;  // degrees
+  bool per_node_priors;           // add a GNSS prior on every node (not just node 0)
+  bool bidirectional_factors;     // add both i->j and j->i pairwise factors
 };
 
 struct OptimizationStats {
@@ -156,7 +158,8 @@ public:
       std::vector<Eigen::Vector4d> pts_d; 
       pts_d.reserve(static_cast<size_t>(f.points.rows()));
       for (Eigen::Index r = 0; r < f.points.rows(); ++r){
-        pts_d.emplace_back(f.points(r,0), f.points(r,1), f.points(r,2), 1.0);
+        // Match the CSV/LAS GUI path, which reads LAS XYZ as Eigen::Vector3f
+        // before constructing small_gicp/gtsam_points clouds.
         pts_d.emplace_back(
           static_cast<float>(f.points(r,0)),
           static_cast<float>(f.points(r,1)),
@@ -269,7 +272,13 @@ public:
     ).finished());
 
 
-    graph.add(gtsam::PriorFactor<gtsam::Pose3>(0, poses.at<gtsam::Pose3>(0), soft_prior));
+    if (opt_params.per_node_priors) {
+      for (size_t i = 0; i < num_frames; ++i) {
+        graph.add(gtsam::PriorFactor<gtsam::Pose3>(i, poses.at<gtsam::Pose3>(i), soft_prior));
+      }
+    } else {
+      graph.add(gtsam::PriorFactor<gtsam::Pose3>(0, poses.at<gtsam::Pose3>(0), soft_prior));
+    }
 
     
     size_t num_added = 0;
@@ -279,6 +288,10 @@ public:
       for (size_t j = i + 1; j < j_end; ++j) {
         auto f = create_factor(i, j, frames[i], voxelmaps[i], voxelmaps_gpu[i], frames[j]); 
         if (f) {graph.add(f); ++num_added;}
+        if (opt_params.bidirectional_factors) {
+          auto reverse = create_factor(j, i, frames[j], voxelmaps[j], voxelmaps_gpu[j], frames[i]);
+          if (reverse) {graph.add(reverse); ++num_added;}
+        }
       }
     }
     if (num_added == 0) {
@@ -403,7 +416,9 @@ PYBIND11_MODULE(gtsam_points_py, m){
       const std::string&, 
       const std::string&,
       const double&, const double&, const double&,
-      const double&, const double&, const double&>(),
+      const double&, const double&, const double&,
+      const bool&,
+      const bool&>(),
     py::arg("full_connection"),
     py::arg("num_threads"), py::arg("correspondence_update_tolerance_rot"), 
     py::arg("correspondence_update_tolerance_trans"), py::arg("optimizer_type"),
@@ -413,7 +428,9 @@ PYBIND11_MODULE(gtsam_points_py, m){
     py::arg("prior_translation_sigma_z"),
     py::arg("prior_rotation_sigma_x"),  // degrees
     py::arg("prior_rotation_sigma_y"),
-    py::arg("prior_rotation_sigma_z"))
+    py::arg("prior_rotation_sigma_z"),
+    py::arg("per_node_priors") = false,
+    py::arg("bidirectional_factors") = true)
     .def_readwrite("full_connection", &OptimizerParams::full_connection)
     .def_readwrite("num_threads", &OptimizerParams::num_threads)
     .def_readwrite("correspondence_update_tolerance_rot", &OptimizerParams::correspondence_update_tolerance_rot)
@@ -425,7 +442,9 @@ PYBIND11_MODULE(gtsam_points_py, m){
     .def_readwrite("prior_translation_sigma_z", &OptimizerParams::prior_translation_sigma_z)
     .def_readwrite("prior_rotation_sigma_x", &OptimizerParams::prior_rotation_sigma_x)
     .def_readwrite("prior_rotation_sigma_y", &OptimizerParams::prior_rotation_sigma_y)
-    .def_readwrite("prior_rotation_sigma_z", &OptimizerParams::prior_rotation_sigma_z);
+    .def_readwrite("prior_rotation_sigma_z", &OptimizerParams::prior_rotation_sigma_z)
+    .def_readwrite("per_node_priors", &OptimizerParams::per_node_priors)
+    .def_readwrite("bidirectional_factors", &OptimizerParams::bidirectional_factors);
 
    
   py::class_<CostFactorMerge>(m, "CostFactorMerge")
