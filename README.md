@@ -8,7 +8,8 @@ Tested on Ubuntu 22.04 / 24.04 and CUDA 12.2 / 12.6 / 13.1 / 13.3, and NVIDIA Je
 
 ## Updates
 
-- 2026/06/14 : v1.2.2 released. Support for GTSAM 4.3a1 and CUDA 13.3.
+- 2026/07/12 : v1.2.2 released. Minor fix for GTSAM 4.3a1..
+- 2026/06/14 : v1.2.1 released. Support for GTSAM 4.3a1 and CUDA 13.3.
 - 2026/01/24 : v1.2.0 released. Support for both GTSAM 4.2a9 and GTSAM 4.3a0, and CUDA 13.1. Intensity support for Gaussian voxelmap.
 - 2025/06/15 : The base GTSAM version has been changed. Make sure you have rebuilt and installed **GTSAM 4.3a1**.
 
