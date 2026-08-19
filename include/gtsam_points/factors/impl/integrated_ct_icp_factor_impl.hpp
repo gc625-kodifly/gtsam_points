@@ -82,6 +82,13 @@ void IntegratedCT_ICPFactor_<TargetFrame, SourceFrame>::print(const std::string&
 }
 
 template <typename TargetFrame, typename SourceFrame>
+size_t IntegratedCT_ICPFactor_<TargetFrame, SourceFrame>::memory_usage() const {
+  return sizeof(*this) + sizeof(double) * time_table.capacity() + sizeof(gtsam::Pose3) * source_poses.capacity() +
+         sizeof(gtsam::Matrix6) * pose_derivatives_t0.capacity() + sizeof(gtsam::Matrix6) * pose_derivatives_t1.capacity() +
+         sizeof(long) * correspondences.capacity() + sizeof(int) * time_indices.capacity();
+}
+
+template <typename TargetFrame, typename SourceFrame>
 double IntegratedCT_ICPFactor_<TargetFrame, SourceFrame>::error(const gtsam::Values& values) const {
   update_poses(values);
   if (correspondences.size() != frame::size(*source)) {
@@ -122,7 +129,7 @@ double IntegratedCT_ICPFactor_<TargetFrame, SourceFrame>::error(const gtsam::Val
 }
 
 template <typename TargetFrame, typename SourceFrame>
-boost::shared_ptr<gtsam::GaussianFactor> IntegratedCT_ICPFactor_<TargetFrame, SourceFrame>::linearize(const gtsam::Values& values) const {
+gtsam::GaussianFactor::shared_ptr IntegratedCT_ICPFactor_<TargetFrame, SourceFrame>::linearize(const gtsam::Values& values) const {
   if (!frame::has_normals(*target)) {
     std::cerr << "error: target cloud doesn't have normals!!" << std::endl;
     abort();

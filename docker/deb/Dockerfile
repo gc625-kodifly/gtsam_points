@@ -12,7 +12,7 @@ RUN apt-get install -y --no-install-recommends
 RUN apt-get install -y --no-install-recommends build-essential  \
     git cmake libeigen3-dev ca-certificates libboost-all-dev libmetis-dev file
 
-RUN git clone https://github.com/borglab/gtsam.git /root/gtsam -b 4.2a9
+RUN git clone https://github.com/borglab/gtsam.git /root/gtsam -b 4.3a1
 WORKDIR /root/gtsam/build
 # Rename libgtsam-dev to libgtsam-notbb-dev
 RUN sed -i 's/libgtsam-dev/libgtsam-notbb-dev/g' ../cmake/HandleCPack.cmake
@@ -26,7 +26,8 @@ RUN cmake .. -DGTSAM_BUILD_EXAMPLES_ALWAYS=OFF \
   -DCPACK_GENERATOR=DEB \
   -DCPACK_DEBIAN_FILE_NAME=DEB-DEFAULT \
   -DCPACK_SET_DESTDIR=ON \
-  -DCPACK_DEBIAN_PACKAGE_SHLIBDEPS=ON
+  -DCPACK_DEBIAN_PACKAGE_SHLIBDEPS=ON \
+  -DCMAKE_CXX_FLAGS="$(CXXFLAGS) -Wno-error=overloaded-virtual"
 RUN make -j$(nproc)
 RUN cpack
 
@@ -50,7 +51,8 @@ WORKDIR /root/gtsam_points/build
 RUN cmake .. \
   -DCMAKE_BUILD_TYPE=Release \
   -DCPACK_DEBIAN_PACKAGE_DEPENDS="libgtsam-notbb-dev" \
-  -DCPACK_DEBIAN_PACKAGE_NAME="libgtsam-points-dev"
+  -DCPACK_DEBIAN_PACKAGE_NAME="libgtsam-points-dev" \
+  -DCMAKE_CXX_FLAGS="$(CXXFLAGS) -Wno-error=overloaded-virtual"
 RUN make -j$(nproc)
 RUN cpack
 

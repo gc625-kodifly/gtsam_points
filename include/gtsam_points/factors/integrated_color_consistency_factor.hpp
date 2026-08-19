@@ -6,6 +6,7 @@
 #include <gtsam/nonlinear/NonlinearFactor.h>
 
 #include <memory>
+#include <gtsam_points/util/gtsam_migration.hpp>
 #include <gtsam_points/types/point_cloud.hpp>
 #include <gtsam_points/factors/intensity_gradients.hpp>
 #include <gtsam_points/factors/integrated_matching_cost_factor.hpp>
@@ -33,7 +34,7 @@ template <
 class IntegratedColorConsistencyFactor_ : public gtsam_points::IntegratedMatchingCostFactor {
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-  using shared_ptr = boost::shared_ptr<IntegratedColorConsistencyFactor_<TargetFrame, SourceFrame>>;
+  using shared_ptr = gtsam_points::shared_ptr<IntegratedColorConsistencyFactor_<TargetFrame, SourceFrame>>;
 
   /**
    * @brief Create a binary color consistency factor between target and source poses.
@@ -73,6 +74,8 @@ public:
 
   /// @brief Print the factor information.
   virtual void print(const std::string& s = "", const gtsam::KeyFormatter& keyFormatter = gtsam::DefaultKeyFormatter) const override;
+
+  virtual size_t memory_usage() const override;
 
   /// @brief Set the number of thread used for linearization of this factor.
   /// @note If your GTSAM is built with TBB, linearization is already multi-threaded

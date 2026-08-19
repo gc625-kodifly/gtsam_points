@@ -6,6 +6,7 @@
 #include <gtsam/nonlinear/NonlinearFactor.h>
 
 #include <memory>
+#include <gtsam_points/util/gtsam_migration.hpp>
 #include <gtsam_points/types/point_cloud.hpp>
 #include <gtsam_points/factors/integrated_matching_cost_factor.hpp>
 
@@ -29,7 +30,7 @@ template <typename TargetFrame = gtsam_points::PointCloud, typename SourceFrame 
 class IntegratedLOAMFactor_ : public gtsam_points::IntegratedMatchingCostFactor {
 public:
   GTSAM_MAKE_ALIGNED_OPERATOR_NEW
-  using shared_ptr = boost::shared_ptr<IntegratedLOAMFactor_<TargetFrame, SourceFrame>>;
+  using shared_ptr = gtsam_points::shared_ptr<IntegratedLOAMFactor_<TargetFrame, SourceFrame>>;
 
   IntegratedLOAMFactor_(
     gtsam::Key target_key,
@@ -52,6 +53,8 @@ public:
   ~IntegratedLOAMFactor_();
 
   virtual void print(const std::string& s = "", const gtsam::KeyFormatter& keyFormatter = gtsam::DefaultKeyFormatter) const override;
+
+  virtual size_t memory_usage() const override;
 
   // note: If your GTSAM is built with TBB, linearization is already multi-threaded
   //     : and setting n>1 can rather affect the processing speed
@@ -88,7 +91,7 @@ template <typename TargetFrame = gtsam_points::PointCloud, typename SourceFrame 
 class IntegratedPointToPlaneFactor_ : public gtsam_points::IntegratedMatchingCostFactor {
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-  using shared_ptr = boost::shared_ptr<IntegratedPointToPlaneFactor_<TargetFrame, SourceFrame>>;
+  using shared_ptr = gtsam_points::shared_ptr<IntegratedPointToPlaneFactor_<TargetFrame, SourceFrame>>;
 
   friend class IntegratedLOAMFactor_<TargetFrame, SourceFrame>;
 
@@ -108,6 +111,8 @@ public:
   ~IntegratedPointToPlaneFactor_();
 
   virtual void print(const std::string& s = "", const gtsam::KeyFormatter& keyFormatter = gtsam::DefaultKeyFormatter) const override;
+
+  virtual size_t memory_usage() const override;
 
   void set_num_threads(int n) { num_threads = n; }
   void set_max_correspondence_distance(double dist) { max_correspondence_distance_sq = dist * dist; }
@@ -148,7 +153,7 @@ template <typename TargetFrame = gtsam_points::PointCloud, typename SourceFrame 
 class IntegratedPointToEdgeFactor_ : public gtsam_points::IntegratedMatchingCostFactor {
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-  using shared_ptr = boost::shared_ptr<IntegratedPointToEdgeFactor_<TargetFrame, SourceFrame>>;
+  using shared_ptr = gtsam_points::shared_ptr<IntegratedPointToEdgeFactor_<TargetFrame, SourceFrame>>;
 
   friend class IntegratedLOAMFactor_<TargetFrame, SourceFrame>;
 
@@ -168,6 +173,8 @@ public:
   ~IntegratedPointToEdgeFactor_();
 
   virtual void print(const std::string& s = "", const gtsam::KeyFormatter& keyFormatter = gtsam::DefaultKeyFormatter) const override;
+
+  virtual size_t memory_usage() const override;
 
   void set_num_threads(int n) { num_threads = n; }
   void set_max_correspondence_distance(double dist) { max_correspondence_distance_sq = dist * dist; }

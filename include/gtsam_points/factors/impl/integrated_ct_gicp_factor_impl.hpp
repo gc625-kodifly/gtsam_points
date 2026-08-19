@@ -56,6 +56,11 @@ void IntegratedCT_GICPFactor_<TargetFrame, SourceFrame>::print(const std::string
 }
 
 template <typename TargetFrame, typename SourceFrame>
+size_t IntegratedCT_GICPFactor_<TargetFrame, SourceFrame>::memory_usage() const {
+  return IntegratedCT_ICPFactor_<TargetFrame, SourceFrame>::memory_usage() + sizeof(Eigen::Matrix4d) * mahalanobis.capacity();
+}
+
+template <typename TargetFrame, typename SourceFrame>
 double IntegratedCT_GICPFactor_<TargetFrame, SourceFrame>::error(const gtsam::Values& values) const {
   this->update_poses(values);
   if (this->correspondences.size() != frame::size(*this->source)) {
@@ -95,7 +100,7 @@ double IntegratedCT_GICPFactor_<TargetFrame, SourceFrame>::error(const gtsam::Va
 }
 
 template <typename TargetFrame, typename SourceFrame>
-boost::shared_ptr<gtsam::GaussianFactor> IntegratedCT_GICPFactor_<TargetFrame, SourceFrame>::linearize(const gtsam::Values& values) const {
+gtsam::GaussianFactor::shared_ptr IntegratedCT_GICPFactor_<TargetFrame, SourceFrame>::linearize(const gtsam::Values& values) const {
   this->update_poses(values);
   this->update_correspondences();
 
@@ -190,7 +195,7 @@ void IntegratedCT_GICPFactor_<TargetFrame, SourceFrame>::update_correspondences(
       const Eigen::Matrix4d RCR = (cov_B + pose * cov_A * pose.transpose());
 
       mahalanobis[i].setZero();
-      mahalanobis[i].block<3, 3>(0, 0) = RCR.block<3, 3>(0, 0).inverse();
+      mahalanobis[i].template block<3, 3>(0, 0) = RCR.block<3, 3>(0, 0).inverse();
     }
   };
 

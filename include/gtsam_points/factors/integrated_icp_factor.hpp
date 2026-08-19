@@ -6,6 +6,7 @@
 #include <gtsam/nonlinear/NonlinearFactor.h>
 
 #include <memory>
+#include <gtsam_points/util/gtsam_migration.hpp>
 #include <gtsam_points/types/point_cloud.hpp>
 #include <gtsam_points/factors/integrated_matching_cost_factor.hpp>
 
@@ -21,7 +22,7 @@ template <typename TargetFrame = gtsam_points::PointCloud, typename SourceFrame 
 class IntegratedICPFactor_ : public gtsam_points::IntegratedMatchingCostFactor {
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-  using shared_ptr = boost::shared_ptr<IntegratedICPFactor_<PointCloud>>;
+  using shared_ptr = gtsam_points::shared_ptr<IntegratedICPFactor_<PointCloud>>;
 
   /**
    * @brief Create a binary ICP factor between two poses.
@@ -78,6 +79,13 @@ public:
   /// @brief Print the factor information.
   virtual void print(const std::string& s = "", const gtsam::KeyFormatter& keyFormatter = gtsam::DefaultKeyFormatter) const override;
 
+  /**
+   * @brief  Calculate the memory usage of this factor
+   * @note   The result is approximate and does not account for objects not owned by this factor (e.g., point clouds)
+   * @return Memory usage in bytes (Approximate size in bytes)
+   */
+  virtual size_t memory_usage() const override;
+
   /// @brief Set the number of thread used for linearization of this factor.
   /// @note If your GTSAM is built with TBB, linearization is already multi-threaded
   ///       and setting n>1 can rather affect the processing speed.
@@ -131,7 +139,7 @@ private:
 template <typename TargetFrame = gtsam_points::PointCloud, typename SourceFrame = gtsam_points::PointCloud>
 class IntegratedPointToPlaneICPFactor_ : public gtsam_points::IntegratedICPFactor_<TargetFrame, SourceFrame> {
 public:
-  using shared_ptr = boost::shared_ptr<IntegratedPointToPlaneICPFactor_<TargetFrame, SourceFrame>>;
+  using shared_ptr = gtsam_points::shared_ptr<IntegratedPointToPlaneICPFactor_<TargetFrame, SourceFrame>>;
 
   IntegratedPointToPlaneICPFactor_(
     gtsam::Key target_key,

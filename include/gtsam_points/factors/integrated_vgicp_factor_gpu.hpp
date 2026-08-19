@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <optional>
+#include <gtsam_points/util/gtsam_migration.hpp>
 #include <gtsam_points/types/point_cloud.hpp>
 #include <gtsam_points/types/gaussian_voxelmap_gpu.hpp>
 #include <gtsam_points/factors/nonlinear_factor_gpu.hpp>
@@ -27,7 +29,7 @@ class TempBufferManager;
 class IntegratedVGICPFactorGPU : public gtsam_points::NonlinearFactorGPU {
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-  using shared_ptr = boost::shared_ptr<IntegratedVGICPFactorGPU>;
+  using shared_ptr = gtsam_points::shared_ptr<IntegratedVGICPFactorGPU>;
 
   /**
    * @brief Create a binary VGICP_GPU factor between target and source poses.
@@ -68,6 +70,19 @@ public:
   /// @brief Print the factor information.
   virtual void print(const std::string& s = "", const gtsam::KeyFormatter& keyFormatter = gtsam::DefaultKeyFormatter) const override;
 
+  /// @brief  Calculate the CPU memory usage of this factor
+  /// @note   The result is approximate and does not account for objects not owned by this factor (e.g., point clouds)
+  /// @return Approximate CPU memory usage in bytes
+  size_t memory_usage() const;
+
+  /// @brief  Calculate the GPU memory usage of this factor
+  /// @note   The result is approximate and does not account for objects not owned by this factor (e.g., point clouds)
+  /// @return Approximate GPU memory usage in bytes
+  size_t memory_usage_gpu() const;
+
+  /// @brief Enable or disable GPU memory offloading.
+  void set_enable_offloading(bool enable);
+
   /// @brief Enable or disable surface orientation validation for correspondence search
   /// @note  To enable surface orientation validation, source frame must have point normals
   void set_enable_surface_validation(bool enable);
@@ -98,7 +113,7 @@ public:
 
   virtual size_t dim() const override { return 6; }
   virtual double error(const gtsam::Values& values) const override;
-  virtual boost::shared_ptr<gtsam::GaussianFactor> linearize(const gtsam::Values& values) const override;
+  virtual gtsam::GaussianFactor::shared_ptr linearize(const gtsam::Values& values) const override;
 
   virtual size_t linearization_input_size() const override;
   virtual size_t linearization_output_size() const override;
@@ -135,7 +150,7 @@ private:
   mutable bool linearized;
   mutable Eigen::Isometry3f linearization_point;
 
-  mutable boost::optional<float> evaluation_result;
+  mutable std::optional<float> evaluation_result;
   mutable std::unique_ptr<LinearizedSystem6> linearization_result;
 };
 

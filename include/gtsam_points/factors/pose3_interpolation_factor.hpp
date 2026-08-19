@@ -5,6 +5,7 @@
 
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/nonlinear/NonlinearFactor.h>
+#include <gtsam_points/util/gtsam_migration.hpp>
 
 namespace gtsam_points {
 
@@ -30,9 +31,9 @@ public:
     const gtsam::Pose3& xi,
     const gtsam::Pose3& xj,
     const gtsam::Pose3& xk,
-    boost::optional<gtsam::Matrix&> H_xi = boost::none,
-    boost::optional<gtsam::Matrix&> H_xj = boost::none,
-    boost::optional<gtsam::Matrix&> H_xk = boost::none) const override {
+    OptionalMatrixType H_xi = NoneValue,
+    OptionalMatrixType H_xj = NoneValue,
+    OptionalMatrixType H_xk = NoneValue) const override {
     //
     const auto& Ri = xi.rotation();
     const auto& Rj = xj.rotation();

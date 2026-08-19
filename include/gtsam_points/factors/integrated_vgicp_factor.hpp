@@ -6,6 +6,7 @@
 #include <gtsam/nonlinear/NonlinearFactor.h>
 
 #include <memory>
+#include <gtsam_points/util/gtsam_migration.hpp>
 #include <gtsam_points/types/point_cloud.hpp>
 #include <gtsam_points/types/gaussian_voxelmap_cpu.hpp>
 #include <gtsam_points/factors/integrated_matching_cost_factor.hpp>
@@ -24,7 +25,7 @@ template <typename SourceFrame = gtsam_points::PointCloud>
 class IntegratedVGICPFactor_ : public gtsam_points::IntegratedMatchingCostFactor {
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-  using shared_ptr = boost::shared_ptr<IntegratedVGICPFactor_>;
+  using shared_ptr = gtsam_points::shared_ptr<IntegratedVGICPFactor_>;
 
   /**
    * @brief Create a binary VGICP factor between target and source poses.
@@ -56,6 +57,13 @@ public:
 
   /// @brief Print the factor information.
   virtual void print(const std::string& s = "", const gtsam::KeyFormatter& keyFormatter = gtsam::DefaultKeyFormatter) const override;
+
+  /**
+   * @brief  Calculate the memory usage of this factor
+   * @note   The result is approximate and does not account for objects not owned by this factor (e.g., point clouds)
+   * @return Memory usage in bytes (Approximate size in bytes)
+   */
+  virtual size_t memory_usage() const override;
 
   /// @brief Set the number of thread used for linearization of this factor.
   /// @note If your GTSAM is built with TBB, linearization is already multi-threaded

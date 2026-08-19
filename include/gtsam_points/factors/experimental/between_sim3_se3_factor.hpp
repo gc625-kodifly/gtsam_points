@@ -6,10 +6,11 @@
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/geometry/Similarity3.h>
 #include <gtsam/nonlinear/NonlinearFactor.h>
+#include <gtsam_points/util/gtsam_migration.hpp>
 
 namespace gtsam_points {
 
-gtsam::Pose3 scaled_transform(const gtsam::Similarity3& sim3, gtsam::OptionalJacobian<6, 7> H = boost::none) {
+gtsam::Pose3 scaled_transform(const gtsam::Similarity3& sim3, gtsam::OptionalJacobian<6, 7> H = nullptr) {
   if (H) {
     H->setZero();
     H->block<3, 3>(0, 0).setIdentity();
@@ -28,8 +29,8 @@ public:
   virtual gtsam::Vector evaluateError(
     const gtsam::Similarity3& x1,
     const gtsam::Pose3& x2,
-    boost::optional<gtsam::Matrix&> H1 = boost::none,
-    boost::optional<gtsam::Matrix&> H2 = boost::none) const override {
+    OptionalMatrixType H1 = NoneValue,
+    OptionalMatrixType H2 = NoneValue) const override {
     //
     if (!H1 || !H2) {
       gtsam::Pose3 delta = scaled_transform(x1).between(x2);

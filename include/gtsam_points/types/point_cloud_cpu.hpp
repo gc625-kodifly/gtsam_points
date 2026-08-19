@@ -94,6 +94,9 @@ public:
 
   static PointCloudCPU::Ptr load(const std::string& path);
 
+  /// @brief Memory usage in bytes
+  size_t memory_usage() const;
+
 public:
   std::vector<double> times_storage;
   std::vector<Eigen::Vector4d> points_storage;
@@ -111,6 +114,14 @@ public:
  * @return         Sampled points
  */
 PointCloudCPU::Ptr sample(const PointCloud::ConstPtr& points, const std::vector<int>& indices);
+
+/**
+ * @brief Sample points from multiple frames by indices
+ * @param frames               Input frames
+ * @param frame_point_indices  Point indices for each frame (packed as (frame_id << 32) | point_id)
+ * @return                     Sampled points
+ */
+PointCloudCPU::Ptr sample_multi_frames(const std::vector<PointCloud::ConstPtr>& frames, const std::vector<std::uint64_t>& frame_point_indices);
 
 /**
  * @brief Naive random sampling.
@@ -289,7 +300,6 @@ double median_distance(const PointCloud::ConstPtr& points, size_t max_scan_count
 
 /**
  * @brief Merge a set of frames into one frame
- * @note  This function only merges points and covs and discard other point attributes.
  * @param poses                  Poses of input frames
  * @param frames                 Input frames
  * @param downsample_resolution  Downsampling resolution
@@ -304,6 +314,33 @@ std::enable_if_t<!std::is_same_v<PointCloudPtr, PointCloud::ConstPtr>, PointClou
 merge_frames(const std::vector<Eigen::Isometry3d>& poses, const std::vector<PointCloudPtr>& frames, double downsample_resolution) {
   std::vector<PointCloud::ConstPtr> frames_(frames.begin(), frames.end());
   return merge_frames(poses, frames_, downsample_resolution);
+}
+
+/**
+ * @brief Merge a set of frames into one frame. All attributes of points are merged and downsampled.
+ * @note  This samples one point per voxel.
+ * @param poses                  Poses of input frames
+ * @param frames                 Input frames
+ * @param downsample_resolution  Downsampling resolution
+ * @param max_num_points         Maximum number of points in the merged frame. If the number of sampled points exceeds this value, random subsampling
+ * is applied.
+ * @return                       Merged frame
+ */
+PointCloud::Ptr merge_frames(
+  const std::vector<Eigen::Isometry3d>& poses,
+  const std::vector<PointCloud::ConstPtr>& frames,
+  double downsample_resolution,
+  size_t max_num_points);
+
+/// @brief Merge a set of frames into one frame
+template <typename PointCloudPtr>
+std::enable_if_t<!std::is_same_v<PointCloudPtr, PointCloud::ConstPtr>, PointCloud::Ptr> merge_frames(
+  const std::vector<Eigen::Isometry3d>& poses,
+  const std::vector<PointCloudPtr>& frames,
+  double downsample_resolution,
+  size_t max_num_points) {
+  std::vector<PointCloud::ConstPtr> frames_(frames.begin(), frames.end());
+  return merge_frames(poses, frames_, downsample_resolution, max_num_points);
 }
 
 /**

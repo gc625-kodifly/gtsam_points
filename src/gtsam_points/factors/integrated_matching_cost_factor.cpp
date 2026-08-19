@@ -34,7 +34,7 @@ double IntegratedMatchingCostFactor::error(const gtsam::Values& values) const {
   return evaluate(delta);
 }
 
-boost::shared_ptr<gtsam::GaussianFactor> IntegratedMatchingCostFactor::linearize(const gtsam::Values& values) const {
+gtsam::GaussianFactor::shared_ptr IntegratedMatchingCostFactor::linearize(const gtsam::Values& values) const {
   Eigen::Isometry3d delta = calc_delta(values);
 
   update_correspondences(delta);
@@ -66,6 +66,10 @@ Eigen::Isometry3d IntegratedMatchingCostFactor::calc_delta(const gtsam::Values& 
     Eigen::Isometry3d delta((target_pose.inverse() * source_pose).matrix());
     return delta;
   }
+}
+
+size_t IntegratedMatchingCostFactor::memory_usage() const {
+  return sizeof(*this);
 }
 
 }  // namespace gtsam_points

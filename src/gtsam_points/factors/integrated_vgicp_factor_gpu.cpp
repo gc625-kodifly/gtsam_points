@@ -91,6 +91,18 @@ void IntegratedVGICPFactorGPU::print(const std::string& s, const gtsam::KeyForma
   std::cout << "target_resolusion=" << target->voxel_resolution() << ", |source|=" << frame::size(*source) << "pts" << std::endl;
 }
 
+size_t IntegratedVGICPFactorGPU::memory_usage() const {
+  return sizeof(*this) + sizeof(IntegratedVGICPDerivatives);
+}
+
+size_t IntegratedVGICPFactorGPU::memory_usage_gpu() const {
+  return sizeof(Eigen::Isometry3f) + sizeof(int) + sizeof(int) * derivatives->get_num_inliers();
+}
+
+void IntegratedVGICPFactorGPU::set_enable_offloading(bool enable) {
+  derivatives->set_enable_offloading(enable);
+}
+
 void IntegratedVGICPFactorGPU::set_enable_surface_validation(bool enable) {
   derivatives->set_enable_surface_validation(enable);
 }
@@ -154,8 +166,8 @@ Eigen::Isometry3f IntegratedVGICPFactorGPU::calc_delta(const gtsam::Values& valu
 double IntegratedVGICPFactorGPU::error(const gtsam::Values& values) const {
   double err;
   if (evaluation_result) {
-    err = evaluation_result.get();
-    evaluation_result = boost::none;
+    err = evaluation_result.value();
+    evaluation_result = {};
   } else {
     std::cerr << "warning: computing error in sync mode seriously affects the processing speed!!" << std::endl;
 
@@ -170,7 +182,7 @@ double IntegratedVGICPFactorGPU::error(const gtsam::Values& values) const {
   return err;
 }
 
-boost::shared_ptr<gtsam::GaussianFactor> IntegratedVGICPFactorGPU::linearize(const gtsam::Values& values) const {
+gtsam::GaussianFactor::shared_ptr IntegratedVGICPFactorGPU::linearize(const gtsam::Values& values) const {
   linearized = true;
   linearization_point = calc_delta(values);
 

@@ -6,6 +6,7 @@
 #include <gtsam/slam/expressions.h>
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
 #include <gtsam_points/types/point_cloud.hpp>
+#include <gtsam_points/util/gtsam_migration.hpp>
 
 namespace gtsam_points {
 
@@ -29,7 +30,7 @@ public:
 
   ~ICPFactorExpr();
 
-  virtual gtsam::Vector unwhitenedError(const gtsam::Values& values, boost::optional<std::vector<gtsam::Matrix>&> H = boost::none) const;
+  virtual gtsam::Vector unwhitenedError(const gtsam::Values& values, OptionalMatrixType H = NoneValue) const;
 
   void update_correspondence(const gtsam::Values& values) const;
 
@@ -49,8 +50,12 @@ private:
 /**
  * @brief Create a set of ICPFactorExpr
  */
-gtsam::NonlinearFactorGraph::shared_ptr
-create_icp_factors(gtsam::Key target_key, gtsam::Key source_key, const PointCloud::ConstPtr& target, const PointCloud::ConstPtr& source, const gtsam::SharedNoiseModel& noise_model);
+gtsam::NonlinearFactorGraph::shared_ptr create_icp_factors(
+  gtsam::Key target_key,
+  gtsam::Key source_key,
+  const PointCloud::ConstPtr& target,
+  const PointCloud::ConstPtr& source,
+  const gtsam::SharedNoiseModel& noise_model);
 
 /**
  * @brief Create a nonlinear factor that wraps a set of ICP factors

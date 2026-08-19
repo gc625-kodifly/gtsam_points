@@ -6,6 +6,7 @@
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
 
+#include <gtsam_points/util/gtsam_migration.hpp>
 #include <gtsam_points/types/point_cloud.hpp>
 
 namespace gtsam_points {
@@ -20,7 +21,7 @@ template <typename TargetFrame = gtsam_points::PointCloud, typename SourceFrame 
 class IntegratedCT_ICPFactor_ : public gtsam::NonlinearFactor {
 public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-  using shared_ptr = boost::shared_ptr<IntegratedCT_ICPFactor_<TargetFrame, SourceFrame>>;
+  using shared_ptr = gtsam_points::shared_ptr<IntegratedCT_ICPFactor_<TargetFrame, SourceFrame>>;
 
   /**
    * @brief Constructor
@@ -55,9 +56,11 @@ public:
   /// @brief Print the factor information.
   virtual void print(const std::string& s = "", const gtsam::KeyFormatter& keyFormatter = gtsam::DefaultKeyFormatter) const override;
 
+  virtual size_t memory_usage() const;
+
   virtual size_t dim() const override { return 6; }
   virtual double error(const gtsam::Values& values) const override;
-  virtual boost::shared_ptr<gtsam::GaussianFactor> linearize(const gtsam::Values& values) const override;
+  virtual gtsam::GaussianFactor::shared_ptr linearize(const gtsam::Values& values) const override;
 
   void set_num_threads(int n) { num_threads = n; }
   void set_max_correspondence_distance(double dist) { max_correspondence_distance_sq = dist * dist; }

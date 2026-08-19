@@ -79,7 +79,7 @@ const gtsam::Value& IncrementalFixedLagSmootherExtWithFallback::calculateEstimat
     const auto& value = smoother->calculateEstimate(key);
     auto found = values.find(key);
     if (found != values.end()) {
-      found->value = value;
+      const_cast<gtsam::Value&>(found->value) = value;  // Bad practice!!
     }
 
     return value;
@@ -177,8 +177,8 @@ void IncrementalFixedLagSmootherExtWithFallback::fallback_smoother() const {
     if (minmax_id == minmax_ids.end()) {
       minmax_ids.emplace_hint(minmax_id, symbol.chr(), std::make_pair(symbol.index(), symbol.index()));
     } else {
-      minmax_id->second.first = std::min(minmax_id->second.first, symbol.index());
-      minmax_id->second.second = std::max(minmax_id->second.second, symbol.index());
+      minmax_id->second.first = std::min<std::uint64_t>(minmax_id->second.first, symbol.index());
+      minmax_id->second.second = std::max<std::uint64_t>(minmax_id->second.second, symbol.index());
     }
   }
 
